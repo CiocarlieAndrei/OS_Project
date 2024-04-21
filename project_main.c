@@ -108,7 +108,7 @@ void processDirectory(char *dir_path, char *output_dir, int i) {
 
 
 int main(int argc, char* argv[]) {
-    printf("Hello there!\n");
+    printf("Hello here!\n");
     if (argc < 3 || argc > 12) { 
         perror("Invalid number of arguments\n");
         exit(EXIT_FAILURE);
@@ -124,16 +124,7 @@ int main(int argc, char* argv[]) {
         perror ("Output directory not found");
         exit( EXIT_FAILURE);
     }
-    
-/*    
-    if ((output = open(argv[argc - 1], O_CREAT | O_WRONLY | O_TRUNC, S_IWGRP | S_IWUSR | S_IXGRP | S_IRUSR)) < 0) {
-        perror("Can't open output file\n");
-        exit(EXIT_FAILURE);
-    }
-*/
-    
-    //write(output, "hello world\n", strlen("hello world\n"));
-    
+        
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp (argv[i], "-o") == 0)
             i = i + 2;
@@ -147,7 +138,28 @@ int main(int argc, char* argv[]) {
                 perror("It's not a directory\n");
                 exit(EXIT_FAILURE);
             }
-            processDirectory(argv[i], output_dir, i);
+
+
+            pid_t pid;
+            if ((pid = fork()) < 0) {
+                perror("error");
+                exit(-1);
+            }
+            if (pid == 0){
+                processDirectory(argv[i], output_dir, i);
+                printf("Snapshot of directory %s has been created\n", argv[i]);
+                exit(0);
+            }
+        }
+    }
+
+    sleep (1); // Parent process sleeps for 1 second before creating the next child
+    pid_t pid_fiu;
+    int status;
+    for (int i = 0 ; i < argc-3; i++){
+        pid_fiu = wait(&status);
+        if (WIFEXITED (status) > 0){
+            printf("Child process %d terminated with pid %d and exit code %d\n", i+1, pid_fiu, WEXITSTATUS(status));
         }
     }
 
