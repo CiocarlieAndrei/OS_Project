@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <time.h>
 
-void processDirectory(char *dir_path, char *output_dir, int i) {
+void processDirectory(char *dir_path, char *output_dir, char *isolated_dir, int i) {
     DIR *dir;
     struct dirent *in;
     struct stat filestat;
@@ -36,7 +36,48 @@ void processDirectory(char *dir_path, char *output_dir, int i) {
             // Construct the output file path
             char output_path[4096];
             sprintf(output_path, "%s/%s", output_dir, in->d_name);
-            //printf  ("%s\n", output_path);//test
+
+            char octal_string[100];//convert octal to string to check file permissions
+            sprintf (octal_string, "%o", filestat.st_mode);
+            sprintf (octal_string, octal_string+3, strlen (octal_string+3));
+
+            if (strcmp (octal_string, "000") == 0){ //check if the file has no permissions
+               pid_t pid;
+                if ((pid = fork()) < 0) {
+                    perror("error");
+                    exit(-1);
+                }
+                if (pid == 0){ // child process to analyze the file with no permissions
+                    printf ("File %s has no permissions\n", in->d_name);
+                    char shell_script[4096];
+                    strcpy(shell_script, "/home/andrei/C_Programms/OS_Project/check_file.sh ");
+                    strcat(shell_script, path);
+                    int exit_status = system (shell_script); // calling the shell script to check if the file is corrupted
+                    int command_exit_status = WEXITSTATUS(exit_status);
+                    if (command_exit_status == 1){ // the file is corrupted
+                        printf ("Fisier corupt \n");
+                        char isolated_file[4096] = "";
+                        strcat(isolated_file, isolated_dir);
+                        strcat(isolated_file, "/");
+                        strcat(isolated_file, in->d_name);
+                        if (rename(path, isolated_file) == 0) { // move the file to the isolated directory
+                            printf("File moved successfully.\n");
+                        } else {
+                            perror("Error renaming file");
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+                    else if (command_exit_status == 0){ // the file is not corrupted
+                        printf ("Fisierul nu este corupt\n");
+                    }
+                    else if (command_exit_status == 2){
+                        perror ("File does not exist or is not a regular file\n");
+                        exit (EXIT_FAILURE);
+                    }
+                    exit(0);
+                }
+                sleep (1); // Parent process sleeps for 1 second before creating the next child
+            }
 
             // Open the output file
             int output;
@@ -99,7 +140,7 @@ void processDirectory(char *dir_path, char *output_dir, int i) {
 
             close(output);
         } else if (S_ISDIR(filestat.st_mode)) {
-            processDirectory(path, output_dir, i);
+            processDirectory(path, output_dir, isolated_dir, i);
         }
     }
 
@@ -109,24 +150,31 @@ void processDirectory(char *dir_path, char *output_dir, int i) {
 
 int main(int argc, char* argv[]) {
     printf("Hello here!\n");
-    if (argc < 3 || argc > 12) { 
+    if (argc < 5 || argc > 14) { // Check if the number of arguments is valid
         perror("Invalid number of arguments\n");
         exit(EXIT_FAILURE);
     }
 
     char *output_dir = NULL;
+    char *isolated_dir = NULL;
 
-    for (int i = 1 ; i < argc - 1; i++){
+    for (int i = 1 ; i < argc - 1; i++){ // Check and create the output directory and isolated directory
         if (strcmp(argv[i], "-o") == 0)
             output_dir = strdup (argv[i+1]);
+        if (strcmp(argv[i], "-s") == 0)
+            isolated_dir = strdup (argv[i+1]);   
     }
     if (output_dir == NULL){
         perror ("Output directory not found");
         exit( EXIT_FAILURE);
     }
+    if (isolated_dir == NULL){
+        perror ("Izolated directory not found");
+        exit (EXIT_FAILURE);
+    }
         
-    for (int i = 1; i < argc - 1; i++) {
-        if (strcmp (argv[i], "-o") == 0)
+    for (int i = 1; i < argc - 1; i++) { 
+        if (strcmp (argv[i], "-o") == 0 || strcmp (argv[i], "-s") == 0)
             i = i + 2;
         else{
             struct stat dirstat;
@@ -146,7 +194,7 @@ int main(int argc, char* argv[]) {
                 exit(-1);
             }
             if (pid == 0){
-                processDirectory(argv[i], output_dir, i);
+                processDirectory(argv[i], output_dir, isolated_dir, i);
                 printf("Snapshot of directory %s has been created\n", argv[i]);
                 exit(0);
             }
@@ -156,7 +204,7 @@ int main(int argc, char* argv[]) {
     sleep (1); // Parent process sleeps for 1 second before creating the next child
     pid_t pid_fiu;
     int status;
-    for (int i = 0 ; i < argc-3; i++){
+    for (int i = 0 ; i < argc-5; i++){        
         pid_fiu = wait(&status);
         if (WIFEXITED (status) > 0){
             printf("Child process %d terminated with pid %d and exit code %d\n", i+1, pid_fiu, WEXITSTATUS(status));
