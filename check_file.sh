@@ -1,5 +1,5 @@
 #!/bin/bash
-
+######  This script can analyze files with no permissions to read and write (suspicious files) #####
 # Check if the file exists
 file_path="$1"
 if [ ! -f "$file_path" ]; then
